@@ -1,0 +1,13 @@
+[package]
+name = "dmx-control"
+version = "0.1.0"
+authors = ["Tom Spurling <tom@tspurling.co.uk>"]
+edition = "2018"
+
+[lib]
+name = "safe_ftdi"
+path = "src/safe_ftdi/src/lib.rs"
+
+[dependencies]
+libftdi1-sys = "0.1.0"
+libc = "0.2"
