@@ -4,15 +4,26 @@ extern crate safe_ftdi as ftdi;
 
 use libc::usleep;
 use std::env::args;
+use std::os::raw::c_int;
+
+fn ftdi_try(ftdi_context: *mut ftdic::ftdi_context, rc: c_int) -> ftdi::Result<c_int> {
+	if rc < 0 {
+		let slice = unsafe { std::ffi::CStr::from_ptr(ftdic::ftdi_get_error_string(ftdi_context)) };
+		Err(ftdi::error::Error::LibFtdi(ftdi::error::LibFtdiError::new(slice.to_str().unwrap())))
+	} else {
+		Ok(rc)
+	}
+}
 
 trait Context {
 	fn set_break(&self, on: bool) -> ftdi::Result<()>;
 }
 impl Context for ftdi::Context {
 	fn set_break(&self, on: bool) -> ftdi::Result<()> {
-		let rc = unsafe {
+		let ftdi_context = self.get_ftdi_context();
+		ftdi_try(ftdi_context, unsafe {
 			ftdic::ftdi_set_line_property2(
-				self.context,
+				ftdi_context,
 				ftdic::ftdi_bits_type::BITS_8,
 				ftdic::ftdi_stopbits_type::STOP_BIT_2,
 				ftdic::ftdi_parity_type::NONE,
@@ -21,8 +32,8 @@ impl Context for ftdi::Context {
 					false => ftdic::ftdi_break_type::BREAK_OFF,
 				},
 			)
-		};
-		self.check_ftdi_error(rc, ())
+		})?;
+		Ok(())
 	}
 }
 
