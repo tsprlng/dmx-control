@@ -6,8 +6,8 @@ use libc::usleep;
 use std::convert::TryInto;
 use std::env::args;
 use std::fs::File;
-use std::io::{Error, ErrorKind};
 use std::io::Write;
+use std::io::{Error, ErrorKind};
 use std::os::raw::c_int;
 
 const STATE_FILE_PATH: &str = "/root/dmx.dmxstate";
@@ -15,7 +15,9 @@ const STATE_FILE_PATH: &str = "/root/dmx.dmxstate";
 unsafe fn ftdi_try(ftdi_context: *mut ftdic::ftdi_context, rc: c_int) -> ftdi::Result<c_int> {
 	if rc < 0 {
 		let slice = std::ffi::CStr::from_ptr(ftdic::ftdi_get_error_string(ftdi_context));
-		Err(ftdi::error::Error::LibFtdi(ftdi::error::LibFtdiError::new(slice.to_str().unwrap())))
+		Err(ftdi::error::Error::LibFtdi(ftdi::error::LibFtdiError::new(
+			slice.to_str().unwrap(),
+		)))
 	} else {
 		Ok(rc)
 	}
@@ -27,16 +29,21 @@ trait Context {
 impl Context for ftdi::Context {
 	fn set_break(&self, on: bool) -> ftdi::Result<()> {
 		let ftdi_context = self.get_ftdi_context();
-		unsafe { ftdi_try(ftdi_context, ftdic::ftdi_set_line_property2(
-			ftdi_context,
-			ftdic::ftdi_bits_type::BITS_8,
-			ftdic::ftdi_stopbits_type::STOP_BIT_2,
-			ftdic::ftdi_parity_type::NONE,
-			match on {
-				true => ftdic::ftdi_break_type::BREAK_ON,
-				false => ftdic::ftdi_break_type::BREAK_OFF,
-			},
-		))}?;
+		unsafe {
+			ftdi_try(
+				ftdi_context,
+				ftdic::ftdi_set_line_property2(
+					ftdi_context,
+					ftdic::ftdi_bits_type::BITS_8,
+					ftdic::ftdi_stopbits_type::STOP_BIT_2,
+					ftdic::ftdi_parity_type::NONE,
+					match on {
+						true => ftdic::ftdi_break_type::BREAK_ON,
+						false => ftdic::ftdi_break_type::BREAK_OFF,
+					},
+				),
+			)
+		}?;
 		Ok(())
 	}
 }
@@ -61,39 +68,42 @@ fn send(universe: [u8; 512]) -> ftdi::Result<()> {
 }
 
 fn read_state() -> std::io::Result<[u8; 512]> {
-    let v = std::fs::read(STATE_FILE_PATH)?;
-    match v.try_into() {
-        Ok(arr) => Ok(arr),
-        Err(_) => Err(Error::new(ErrorKind::InvalidData, "State file is wrong length")),
-    }
+	let v = std::fs::read(STATE_FILE_PATH)?;
+	match v.try_into() {
+		Ok(arr) => Ok(arr),
+		Err(_) => Err(Error::new(
+			ErrorKind::InvalidData,
+			"State file is wrong length",
+		)),
+	}
 }
 
 enum Mode {
-    Enable,
-    Disable,
-    Toggle,
+	Enable,
+	Disable,
+	Toggle,
 }
 
 fn new_value(m: &Mode, current_value: u8) -> u8 {
-    match m {
-        Mode::Enable => 200,
-        Mode::Disable => 0,
-        Mode::Toggle => match current_value {
-            0 => 200,
-            _ => 0,
-        }
-    }
+	match m {
+		Mode::Enable => 200,
+		Mode::Disable => 0,
+		Mode::Toggle => match current_value {
+			0 => 200,
+			_ => 0,
+		},
+	}
 }
 
-const ARG_ERROR : &str = "Args should be channel numbers";
+const ARG_ERROR: &str = "Args should be channel numbers";
 
 fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
-    let (mode, chan_number) = match arg.chars().nth(0) {
-        Some('-') => (Some(Mode::Disable), &arg[1..] ),
-        Some('+') => (Some(Mode::Enable), &arg[1..] ),
-        Some('^') => (Some(Mode::Toggle), &arg[1..] ),
-        _ => (None, &arg[..]),
-    };
+	let (mode, chan_number) = match arg.chars().nth(0) {
+		Some('-') => (Some(Mode::Disable), &arg[1..]),
+		Some('+') => (Some(Mode::Enable), &arg[1..]),
+		Some('^') => (Some(Mode::Toggle), &arg[1..]),
+		_ => (None, &arg[..]),
+	};
 
 	match chan_number.parse::<u16>() {
 		Ok(n) => match n {
@@ -105,26 +115,31 @@ fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 }
 
 fn main() -> Result<(), String> {
-	let mut universe: [u8; 512] = match args().nth(1).map(|a| parse_arg(&a).expect(ARG_ERROR) ) {
-        Some((Some(_), _)) => match read_state() {
-            Ok(vec) => vec,
-            Err(_) => { eprintln!("Couldn't read state file; turning everything off!"); [0; 512] },
-        },
-        _ => [0; 512],
-    };
+	let mut universe: [u8; 512] = match args().nth(1).map(|a| parse_arg(&a).expect(ARG_ERROR)) {
+		Some((Some(_), _)) => match read_state() {
+			Ok(vec) => vec,
+			Err(_) => {
+				eprintln!("Couldn't read state file; turning everything off!");
+				[0; 512]
+			}
+		},
+		_ => [0; 512],
+	};
 
-    let mut mode = Mode::Enable;
+	let mut mode = Mode::Enable;
 
 	for arg in args().skip(1) {
-        let (new_mode, chan_number) = parse_arg(&arg)?;
-        match new_mode {
-            Some(m) => mode = m,
-            _ => ()
-        }
-	    universe[chan_number as usize] = new_value(&mode, universe[chan_number as usize]);
+		let (new_mode, chan_number) = parse_arg(&arg)?;
+		match new_mode {
+			Some(m) => mode = m,
+			_ => (),
+		}
+		universe[chan_number as usize] = new_value(&mode, universe[chan_number as usize]);
 	}
 
-    File::create(STATE_FILE_PATH).and_then(|mut f| f.write(&universe) ).expect("Failed to write state file");
+	File::create(STATE_FILE_PATH)
+		.and_then(|mut f| f.write(&universe))
+		.expect("Failed to write state file");
 	match send(universe) {
 		Ok(_) => (),
 		Err(e) => return Err(e.to_string()),
