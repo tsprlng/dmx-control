@@ -3,8 +3,14 @@ extern crate libftdi1_sys as ftdic;
 extern crate safe_ftdi as ftdi;
 
 use libc::usleep;
+use std::convert::TryInto;
 use std::env::args;
+use std::fs::File;
+use std::io::{Error, ErrorKind};
+use std::io::Write;
 use std::os::raw::c_int;
+
+const STATE_FILE_PATH: &str = "/root/dmx.dmxstate";
 
 unsafe fn ftdi_try(ftdi_context: *mut ftdic::ftdi_context, rc: c_int) -> ftdi::Result<c_int> {
 	if rc < 0 {
@@ -54,19 +60,52 @@ fn send(universe: [u8; 512]) -> ftdi::Result<()> {
 	Ok(())
 }
 
+fn read_state() -> std::io::Result<Vec<u8>> {
+    let v = std::fs::read(STATE_FILE_PATH)?;
+    match v.len() {
+        512 => Ok(v),
+        _ => Err(Error::new(ErrorKind::InvalidData, "State file is wrong length")),
+    }
+}
+
+enum Mode {
+    Enable,
+    Disable
+}
+fn default_value(m: &Mode) -> u8 {
+    match m {
+        Mode::Enable => 200,
+        Mode::Disable => 0,
+    }
+}
+
 fn main() -> Result<(), String> {
-	let mut universe: [u8; 512] = [0; 512];
+	let mut universe: [u8; 512] = match args().nth(1).and_then(|arg| arg.chars().nth(0)) {
+        Some('-') | Some('+') => match read_state() {
+            Ok(vec) => { println!("good"); vec.try_into().unwrap() },
+            Err(_) => [0; 512],
+        },
+        _ => [0; 512],
+    };
+    let mut mode = Mode::Enable;
 
 	for arg in args().skip(1) {
-		match arg.parse::<u16>() {
+        let chan_number = match arg.chars().nth(0) {
+            Some('-') => { mode = Mode::Disable; &arg[1..] },
+            Some('+') => { mode = Mode::Enable; &arg[1..] },
+            _ => &arg[..],
+        };
+
+		match chan_number.parse::<u16>() {
 			Ok(n) => match n {
-				0..=511 => universe[n as usize] = 200,
+				0..=511 => universe[n as usize] = default_value(&mode),
 				_ => return Err("Args should be channel numbers".to_string()),
 			},
 			Err(_) => return Err("Args should be channel numbers".to_string()),
 		};
 	}
 
+    File::create(STATE_FILE_PATH).and_then(|mut f| f.write(&universe) ).expect("Failed to write state file");
 	match send(universe) {
 		Ok(_) => (),
 		Err(e) => return Err(e.to_string()),
