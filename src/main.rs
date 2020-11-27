@@ -73,6 +73,7 @@ enum Mode {
     Disable,
     Toggle,
 }
+
 fn new_value(m: &Mode, current_value: u8) -> u8 {
     match m {
         Mode::Enable => 200,
@@ -84,31 +85,43 @@ fn new_value(m: &Mode, current_value: u8) -> u8 {
     }
 }
 
+const ARG_ERROR : &str = "Args should be channel numbers";
+
+fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
+    let (mode, chan_number) = match arg.chars().nth(0) {
+        Some('-') => (Some(Mode::Disable), &arg[1..] ),
+        Some('+') => (Some(Mode::Enable), &arg[1..] ),
+        Some('^') => (Some(Mode::Toggle), &arg[1..] ),
+        _ => (None, &arg[..]),
+    };
+
+	match chan_number.parse::<u16>() {
+		Ok(n) => match n {
+			0..=511 => Ok((mode, n)),
+			_ => Err(ARG_ERROR.to_string()),
+		},
+		Err(_) => Err(ARG_ERROR.to_string()),
+	}
+}
+
 fn main() -> Result<(), String> {
-	let mut universe: [u8; 512] = match args().nth(1).and_then(|arg| arg.chars().nth(0)) {
-        Some('-') | Some('+') | Some('^') => match read_state() {
+	let mut universe: [u8; 512] = match args().nth(1).map(|a| parse_arg(&a).expect(ARG_ERROR) ) {
+        Some((Some(_), _)) => match read_state() {
             Ok(vec) => vec,
             Err(_) => { eprintln!("Couldn't read state file; turning everything off!"); [0; 512] },
         },
         _ => [0; 512],
     };
+
     let mut mode = Mode::Enable;
 
 	for arg in args().skip(1) {
-        let chan_number = match arg.chars().nth(0) {
-            Some('-') => { mode = Mode::Disable; &arg[1..] },
-            Some('+') => { mode = Mode::Enable; &arg[1..] },
-            Some('^') => { mode = Mode::Toggle; &arg[1..] },
-            _ => &arg[..],
-        };
-
-		match chan_number.parse::<u16>() {
-			Ok(n) => match n {
-				0..=511 => universe[n as usize] = new_value(&mode, universe[n as usize]),
-				_ => return Err("Args should be channel numbers".to_string()),
-			},
-			Err(_) => return Err("Args should be channel numbers".to_string()),
-		};
+        let (new_mode, chan_number) = parse_arg(&arg)?;
+        match new_mode {
+            Some(m) => mode = m,
+            _ => ()
+        }
+	    universe[chan_number as usize] = new_value(&mode, universe[chan_number as usize]);
 	}
 
     File::create(STATE_FILE_PATH).and_then(|mut f| f.write(&universe) ).expect("Failed to write state file");
