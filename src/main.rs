@@ -4,12 +4,23 @@ extern crate safe_ftdi as ftdi;
 
 use libc::usleep;
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::Write;
 use std::io::{Error, ErrorKind};
 use std::os::raw::c_int;
+use std::path::{Path, PathBuf};
 
-const STATE_FILE_PATH: &str = "/root/dmx.dmxstate";
+fn state_file_path() -> std::io::Result<Box<Path>> {
+	if let Ok(path_str) = std::env::var("DMX_STATE_PATH") {
+		return Ok(PathBuf::from(path_str).into_boxed_path());
+	}
+	if let Some(mut home_dir) = std::env::home_dir() {
+		home_dir.push(".cache");
+		if home_dir.is_dir() {
+			home_dir.push("dmx.state");
+			return Ok(home_dir.into_boxed_path());
+		}
+	}
+	Err(Error::new(ErrorKind::NotFound, "State file can't be found"))
+}
 
 unsafe fn ftdi_try(ftdi_context: *mut ftdic::ftdi_context, rc: c_int) -> ftdi::Result<c_int> {
 	if rc < 0 {
@@ -56,25 +67,26 @@ fn send(universe: [u8; 512]) -> ftdi::Result<()> {
 		// TODO repeating transmission is enough -- it works -- but why is it unreliable in the first place?
 
 		context.set_break(true)?;
-		unsafe { usleep(10000) };
+		unsafe { usleep(10_000) };
 		context.set_break(false)?;
 		unsafe { usleep(8) };
 
 		context.write_data(&universe)?;
-		unsafe { usleep(15000) };
+		unsafe { usleep(15_000) };
 	}
 	Ok(())
 }
 
 fn read_state() -> std::io::Result<[u8; 512]> {
-	let v = std::fs::read(STATE_FILE_PATH)?;
-	match v.try_into() {
-		Ok(arr) => Ok(arr),
-		Err(_) => Err(Error::new(
-			ErrorKind::InvalidData,
-			"State file is wrong length",
-		)),
-	}
+	let state = std::fs::read(state_file_path()?)?;
+	state.try_into().or(Err(Error::new(
+		ErrorKind::InvalidData,
+		"State file is wrong length",
+	)))
+}
+
+fn write_state(universe: [u8; 512]) -> Result<(), Error> {
+	std::fs::write(state_file_path()?, &universe)
 }
 
 enum Mode {
@@ -94,8 +106,6 @@ fn new_value(m: &Mode, current_value: u8) -> u8 {
 	}
 }
 
-const ARG_ERROR: &str = "Args should be channel numbers";
-
 fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 	let (mode, chan_number) = match arg.chars().nth(0) {
 		Some('-') => (Some(Mode::Disable), &arg[1..]),
@@ -104,13 +114,12 @@ fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 		_ => (None, &arg[..]),
 	};
 
-	match chan_number.parse::<u16>() {
-		Ok(n) => match n {
-			0..=511 => Ok((mode, n)),
-			_ => Err(ARG_ERROR.to_string()),
-		},
-		Err(_) => Err(ARG_ERROR.to_string()),
-	}
+	if let Ok(n) = chan_number.parse::<u16>() {
+		if n < 512 {
+			return Ok((mode, n));
+		}
+	};
+	Err("Args should be channel numbers".to_string())
 }
 
 fn main() -> Result<(), String> {
@@ -118,39 +127,26 @@ fn main() -> Result<(), String> {
 		.skip(1)
 		.map(|a| parse_arg(&a))
 		.collect::<Result<Vec<_>, _>>())?;
-	let is_stateful_request = args.iter().any(|a| match a {
-		(Some(_), _) => true,
-		_ => false,
-	});
 
+	let is_stateful_request = args.iter().any(|(maybe_mode, _)| maybe_mode.is_some());
 	let mut universe: [u8; 512] = match is_stateful_request {
-		true => match read_state() {
-			Ok(vec) => vec,
-			Err(_) => {
-				eprintln!("Couldn't read state file; turning unspecified channels off!");
-				[0; 512]
-			}
-		},
+		true => read_state().unwrap_or_else(|_| {
+			eprintln!("Couldn't read state file; turning unspecified channels off!");
+			[0; 512]
+		}),
 		false => [0; 512],
 	};
 
 	let mut mode = Mode::Enable;
-
 	for (new_mode, chan_number) in args {
-		match new_mode {
-			Some(m) => mode = m,
-			_ => (),
+		if let Some(m) = new_mode {
+			mode = m
 		}
 		universe[chan_number as usize] = new_value(&mode, universe[chan_number as usize]);
 	}
 
-	match send(universe) {
-		Ok(_) => (),
-		Err(e) => return Err(e.to_string()),
-	}
-	File::create(STATE_FILE_PATH)
-		.and_then(|mut f| f.write(&universe))
-		.or(Err("Failed to write state file"))?;
+	send(universe).map_err(|err| err.to_string())?;
+	write_state(universe).or(Err("Failed to write state file"))?;
 
 	Ok(())
 }
