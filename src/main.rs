@@ -70,18 +70,23 @@ fn read_state() -> std::io::Result<[u8; 512]> {
 
 enum Mode {
     Enable,
-    Disable
+    Disable,
+    Toggle,
 }
-fn default_value(m: &Mode) -> u8 {
+fn new_value(m: &Mode, current_value: u8) -> u8 {
     match m {
         Mode::Enable => 200,
         Mode::Disable => 0,
+        Mode::Toggle => match current_value {
+            0 => 200,
+            _ => 0,
+        }
     }
 }
 
 fn main() -> Result<(), String> {
 	let mut universe: [u8; 512] = match args().nth(1).and_then(|arg| arg.chars().nth(0)) {
-        Some('-') | Some('+') => match read_state() {
+        Some('-') | Some('+') | Some('^') => match read_state() {
             Ok(vec) => vec,
             Err(_) => { eprintln!("Couldn't read state file; turning everything off!"); [0; 512] },
         },
@@ -93,12 +98,13 @@ fn main() -> Result<(), String> {
         let chan_number = match arg.chars().nth(0) {
             Some('-') => { mode = Mode::Disable; &arg[1..] },
             Some('+') => { mode = Mode::Enable; &arg[1..] },
+            Some('^') => { mode = Mode::Toggle; &arg[1..] },
             _ => &arg[..],
         };
 
 		match chan_number.parse::<u16>() {
 			Ok(n) => match n {
-				0..=511 => universe[n as usize] = default_value(&mode),
+				0..=511 => universe[n as usize] = new_value(&mode, universe[n as usize]),
 				_ => return Err("Args should be channel numbers".to_string()),
 			},
 			Err(_) => return Err("Args should be channel numbers".to_string()),
