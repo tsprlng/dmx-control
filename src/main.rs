@@ -60,11 +60,11 @@ fn send(universe: [u8; 512]) -> ftdi::Result<()> {
 	Ok(())
 }
 
-fn read_state() -> std::io::Result<Vec<u8>> {
+fn read_state() -> std::io::Result<[u8; 512]> {
     let v = std::fs::read(STATE_FILE_PATH)?;
-    match v.len() {
-        512 => Ok(v),
-        _ => Err(Error::new(ErrorKind::InvalidData, "State file is wrong length")),
+    match v.try_into() {
+        Ok(arr) => Ok(arr),
+        Err(_) => Err(Error::new(ErrorKind::InvalidData, "State file is wrong length")),
     }
 }
 
@@ -82,8 +82,8 @@ fn default_value(m: &Mode) -> u8 {
 fn main() -> Result<(), String> {
 	let mut universe: [u8; 512] = match args().nth(1).and_then(|arg| arg.chars().nth(0)) {
         Some('-') | Some('+') => match read_state() {
-            Ok(vec) => { println!("good"); vec.try_into().unwrap() },
-            Err(_) => [0; 512],
+            Ok(vec) => vec,
+            Err(_) => { eprintln!("Couldn't read state file; turning everything off!"); [0; 512] },
         },
         _ => [0; 512],
     };
