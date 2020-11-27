@@ -4,7 +4,6 @@ extern crate safe_ftdi as ftdi;
 
 use libc::usleep;
 use std::convert::TryInto;
-use std::env::args;
 use std::fs::File;
 use std::io::Write;
 use std::io::{Error, ErrorKind};
@@ -115,21 +114,29 @@ fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 }
 
 fn main() -> Result<(), String> {
-	let mut universe: [u8; 512] = match args().nth(1).map(|a| parse_arg(&a)).transpose()? {
-		Some((Some(_), _)) => match read_state() {
+	let args = (std::env::args()
+		.skip(1)
+		.map(|a| parse_arg(&a))
+		.collect::<Result<Vec<_>, _>>())?;
+	let is_stateful_request = args.iter().any(|a| match a {
+		(Some(_), _) => true,
+		_ => false,
+	});
+
+	let mut universe: [u8; 512] = match is_stateful_request {
+		true => match read_state() {
 			Ok(vec) => vec,
 			Err(_) => {
-				eprintln!("Couldn't read state file; turning everything off!");
+				eprintln!("Couldn't read state file; turning unspecified channels off!");
 				[0; 512]
 			}
 		},
-		_ => [0; 512],
+		false => [0; 512],
 	};
 
 	let mut mode = Mode::Enable;
 
-	for arg in args().skip(1) {
-		let (new_mode, chan_number) = parse_arg(&arg)?;
+	for (new_mode, chan_number) in args {
 		match new_mode {
 			Some(m) => mode = m,
 			_ => (),
