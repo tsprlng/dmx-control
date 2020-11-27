@@ -115,7 +115,7 @@ fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 }
 
 fn main() -> Result<(), String> {
-	let mut universe: [u8; 512] = match args().nth(1).map(|a| parse_arg(&a).expect(ARG_ERROR)) {
+	let mut universe: [u8; 512] = match args().nth(1).map(|a| parse_arg(&a)).transpose()? {
 		Some((Some(_), _)) => match read_state() {
 			Ok(vec) => vec,
 			Err(_) => {
@@ -137,13 +137,13 @@ fn main() -> Result<(), String> {
 		universe[chan_number as usize] = new_value(&mode, universe[chan_number as usize]);
 	}
 
-	File::create(STATE_FILE_PATH)
-		.and_then(|mut f| f.write(&universe))
-		.expect("Failed to write state file");
 	match send(universe) {
 		Ok(_) => (),
 		Err(e) => return Err(e.to_string()),
 	}
+	File::create(STATE_FILE_PATH)
+		.and_then(|mut f| f.write(&universe))
+		.or(Err("Failed to write state file"))?;
 
 	Ok(())
 }
