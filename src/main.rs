@@ -1,3 +1,4 @@
+extern crate dirs;
 extern crate libc;
 extern crate libftdi1_sys as ftdic;
 extern crate safe_ftdi as ftdi;
@@ -12,11 +13,11 @@ fn state_file_path() -> std::io::Result<Box<Path>> {
 	if let Ok(path_str) = std::env::var("DMX_STATE_PATH") {
 		return Ok(PathBuf::from(path_str).into_boxed_path());
 	}
-	if let Some(mut home_dir) = std::env::home_dir() {
-		home_dir.push(".cache");
-		if home_dir.is_dir() {
-			home_dir.push("dmx.state");
-			return Ok(home_dir.into_boxed_path());
+	if let Some(mut home_path) = dirs::home_dir() {
+		home_path.push(".cache");
+		if home_path.is_dir() {
+			home_path.push("dmx.state");
+			return Ok(home_path.into_boxed_path());
 		}
 	}
 	Err(Error::new(ErrorKind::NotFound, "State file can't be found"))
