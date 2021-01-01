@@ -3,11 +3,15 @@ extern crate libc;
 extern crate libftdi1_sys as ftdic;
 extern crate safe_ftdi as ftdi;
 
-use libc::usleep;
-use std::convert::TryInto;
-use std::io::{Error, ErrorKind};
-use std::os::raw::c_int;
-use std::path::{Path, PathBuf};
+use {
+	libc::usleep,
+	std::{
+		convert::TryInto,
+		io::{Error, ErrorKind},
+		os::raw::c_int,
+		path::{Path, PathBuf},
+	},
+};
 
 fn state_file_path() -> std::io::Result<Box<Path>> {
 	if let Ok(path_str) = std::env::var("DMX_STATE_PATH") {
