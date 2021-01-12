@@ -94,18 +94,18 @@ fn write_state(universe: [u8; 512]) -> Result<(), Error> {
 	std::fs::write(state_file_path()?, &universe)
 }
 
+const DEFAULT_ENABLE_VALUE: u8 = 200;
+
 enum Mode {
-	Enable,
-	Disable,
+	Set(u8),
 	Toggle,
 }
 
 fn new_value(m: &Mode, current_value: u8) -> u8 {
 	match m {
-		Mode::Enable => 200,
-		Mode::Disable => 0,
+		Mode::Set(value) => *value,
 		Mode::Toggle => match current_value {
-			0 => 200,
+			0 => DEFAULT_ENABLE_VALUE,
 			_ => 0,
 		},
 	}
@@ -113,8 +113,8 @@ fn new_value(m: &Mode, current_value: u8) -> u8 {
 
 fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 	let (mode, chan_number) = match arg.chars().nth(0) {
-		Some('-') => (Some(Mode::Disable), &arg[1..]),
-		Some('+') => (Some(Mode::Enable), &arg[1..]),
+		Some('-') => (Some(Mode::Set(0)), &arg[1..]),
+		Some('+') => (Some(Mode::Set(DEFAULT_ENABLE_VALUE)), &arg[1..]),
 		Some('^') => (Some(Mode::Toggle), &arg[1..]),
 		_ => (None, &arg[..]),
 	};
@@ -142,12 +142,14 @@ fn main() -> Result<(), String> {
 		false => [0; 512],
 	};
 
-	let mut mode = Mode::Enable;
+	let mut mode = Mode::Set(DEFAULT_ENABLE_VALUE);
 	for (new_mode, chan_number) in args {
 		if let Some(m) = new_mode {
 			mode = m
 		}
-		universe[chan_number as usize] = new_value(&mode, universe[chan_number as usize]);
+		let v = new_value(&mode, universe[chan_number as usize]);
+		universe[chan_number as usize] = v;
+		mode = Mode::Set(v);
 	}
 
 	send(universe).map_err(|err| err.to_string())?;
