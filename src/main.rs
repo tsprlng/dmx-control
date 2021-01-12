@@ -8,7 +8,6 @@ use {
 	std::{
 		convert::TryInto,
 		io::{Error, ErrorKind},
-		os::raw::c_int,
 		path::{Path, PathBuf},
 	},
 };
@@ -27,15 +26,21 @@ fn state_file_path() -> std::io::Result<Box<Path>> {
 	Err(Error::new(ErrorKind::NotFound, "State file can't be found"))
 }
 
-unsafe fn ftdi_try(ftdi_context: *mut ftdic::ftdi_context, rc: c_int) -> ftdi::Result<c_int> {
-	if rc < 0 {
-		let slice = std::ffi::CStr::from_ptr(ftdic::ftdi_get_error_string(ftdi_context));
-		Err(ftdi::error::Error::LibFtdi(ftdi::error::LibFtdiError::new(
-			slice.to_str().unwrap(),
-		)))
-	} else {
-		Ok(rc)
-	}
+macro_rules! ftdi_try {
+	($ftdi_fn:expr, $ctx:expr, $($a:expr),*) => {
+		unsafe {
+			let ctx = $ctx;
+			let rc = $ftdi_fn(ctx, $($a,)*);
+			if rc < 0 {
+				let slice = std::ffi::CStr::from_ptr(ftdic::ftdi_get_error_string(ctx));
+				Err(ftdi::error::Error::LibFtdi(ftdi::error::LibFtdiError::new(
+					slice.to_str().unwrap()
+				)))
+			} else {
+				Ok(rc)
+			}
+		}
+	};
 }
 
 trait Context {
@@ -43,22 +48,17 @@ trait Context {
 }
 impl Context for ftdi::Context {
 	fn set_break(&self, on: bool) -> ftdi::Result<()> {
-		let ftdi_context = self.get_ftdi_context();
-		unsafe {
-			ftdi_try(
-				ftdi_context,
-				ftdic::ftdi_set_line_property2(
-					ftdi_context,
-					ftdic::ftdi_bits_type::BITS_8,
-					ftdic::ftdi_stopbits_type::STOP_BIT_2,
-					ftdic::ftdi_parity_type::NONE,
-					match on {
-						true => ftdic::ftdi_break_type::BREAK_ON,
-						false => ftdic::ftdi_break_type::BREAK_OFF,
-					},
-				),
-			)
-		}?;
+		ftdi_try!(
+			ftdic::ftdi_set_line_property2,
+			self.get_ftdi_context(),
+			ftdic::ftdi_bits_type::BITS_8,
+			ftdic::ftdi_stopbits_type::STOP_BIT_2,
+			ftdic::ftdi_parity_type::NONE,
+			match on {
+				true => ftdic::ftdi_break_type::BREAK_ON,
+				false => ftdic::ftdi_break_type::BREAK_OFF,
+			}
+		)?;
 		Ok(())
 	}
 }
