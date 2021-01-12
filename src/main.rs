@@ -12,6 +12,7 @@ use {
 	},
 };
 
+/// Decides where to look for the state file
 fn state_file_path() -> std::io::Result<Box<Path>> {
 	if let Ok(path_str) = std::env::var("DMX_STATE_PATH") {
 		return Ok(PathBuf::from(path_str).into_boxed_path());
@@ -26,11 +27,13 @@ fn state_file_path() -> std::io::Result<Box<Path>> {
 	Err(Error::new(ErrorKind::NotFound, "State file can't be found"))
 }
 
+/// Safely invokes a native ftdi function, preserving non-error return codes in an [`ftdi::Result<os::raw::c_int>`]
+#[macro_export]
 macro_rules! ftdi_try {
-	($ftdi_fn:expr, $ctx:expr, $($a:expr),*) => {
+	($ftdi_fn:expr, $ftdi_context:expr, $($other_args:expr),*) => {
 		unsafe {
-			let ctx = $ctx;
-			let rc = $ftdi_fn(ctx, $($a,)*);
+			let ctx = $ftdi_context;
+			let rc = $ftdi_fn(ctx, $($other_args,)*);
 			if rc < 0 {
 				let slice = std::ffi::CStr::from_ptr(ftdic::ftdi_get_error_string(ctx));
 				Err(ftdi::error::Error::LibFtdi(ftdi::error::LibFtdiError::new(
@@ -43,7 +46,9 @@ macro_rules! ftdi_try {
 	};
 }
 
+/// Trait to add missing [`ftdic`] methods to [`ftdi::Context`]
 trait Context {
+	/// Uses [`ftdic::ftdi_set_line_property2`] to set or unset the break signal
 	fn set_break(&self, on: bool) -> ftdi::Result<()>;
 }
 impl Context for ftdi::Context {
@@ -63,6 +68,7 @@ impl Context for ftdi::Context {
 	}
 }
 
+/// Sends DMX universe data to the default FTDI USB device
 fn send(universe: [u8; 512]) -> ftdi::Result<()> {
 	let mut context = ftdi::Context::new()?;
 	context.open(0x0403, 0x6001)?;
@@ -82,6 +88,7 @@ fn send(universe: [u8; 512]) -> ftdi::Result<()> {
 	Ok(())
 }
 
+/// Tries to load the last-sent universe values from the state file
 fn read_state() -> std::io::Result<[u8; 512]> {
 	let state = std::fs::read(state_file_path()?)?;
 	state.try_into().or(Err(Error::new(
@@ -90,17 +97,23 @@ fn read_state() -> std::io::Result<[u8; 512]> {
 	)))
 }
 
+/// Writes the updated universe values to the state file
 fn write_state(universe: [u8; 512]) -> Result<(), Error> {
 	std::fs::write(state_file_path()?, &universe)
 }
 
+/// The default value for a channel to be turned on with
 const DEFAULT_ENABLE_VALUE: u8 = 200;
 
+/// What the program should do with any channels it sees next
 enum Mode {
+	/// Set the channel to a given value
 	Set(u8),
+	/// Flip the channel on/off, setting any following channels to the same value
 	Toggle,
 }
 
+/// Decides what value to set a channel to, based on the current [`Mode`]
 fn new_value(m: &Mode, current_value: u8) -> u8 {
 	match m {
 		Mode::Set(value) => *value,
@@ -111,6 +124,7 @@ fn new_value(m: &Mode, current_value: u8) -> u8 {
 	}
 }
 
+/// Parses each normal channel argument, extracting change of [`Mode`] (if present) and channel number
 fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 	let (mode, chan_number) = match arg.chars().nth(0) {
 		Some('-') => (Some(Mode::Set(0)), &arg[1..]),
