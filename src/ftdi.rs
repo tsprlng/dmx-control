@@ -7,7 +7,6 @@ extern crate safe_ftdi as ftdi;
 use libc::usleep;
 
 /// Safely invokes a native ftdi function, preserving non-error return codes in an [`ftdi::Result<os::raw::c_int>`]
-#[macro_export]
 macro_rules! ftdi_try {
 	($ftdi_fn:expr, $ftdi_context:expr, $($other_args:expr),*) => {
 		unsafe {
