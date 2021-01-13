@@ -77,10 +77,10 @@ fn parse_arg(arg: &String) -> Result<(Option<Mode>, u16), String> {
 }
 
 fn main() -> Result<(), String> {
-	let args = (std::env::args()
+	let args = std::env::args()
 		.skip(1)
 		.map(|a| parse_arg(&a))
-		.collect::<Result<Vec<_>, _>>())?;
+		.collect::<Result<Vec<_>, _>>()?;
 
 	let is_stateful_request = args.iter().any(|(maybe_mode, _)| maybe_mode.is_some());
 	let mut universe: [u8; 512] = match is_stateful_request {
