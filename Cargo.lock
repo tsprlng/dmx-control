@@ -85,6 +85,7 @@ dependencies = [
  "dirs",
  "libc",
  "libftdi1-sys",
+ "safe-ftdi",
 ]
 
 [[package]]
@@ -153,6 +154,15 @@ dependencies = [
  "blake2b_simd",
  "constant_time_eq",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "safe-ftdi"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce404d5bff09035ad0bd740e5bef5c9f8d38775e6fab2cdbd36c066fb135c73"
+dependencies = [
+ "libftdi1-sys",
 ]
 
 [[package]]

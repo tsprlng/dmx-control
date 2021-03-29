@@ -1,3 +1,0 @@
-[submodule "src/safe_ftdi"]
-	path = src/safe_ftdi
-	url = https://github.com/cr1901/safe-ftdi.git
